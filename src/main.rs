@@ -1,5 +1,6 @@
 use ::reqwest::blocking::Client;
 use std::error::Error;
+use owo_colors::{OwoColorize, DynColors};
 // use anyhow::Result;
 use graphql_client::GraphQLQuery;
 use graphql_client::reqwest::post_graphql_blocking as post_graphql;
@@ -19,7 +20,23 @@ struct DayContribution {
     color: String,
 }
 
-fn parse_github_status(response_data: heatmap_query::ResponseData) -> Result<Vec<Vec<DayContribution>>, String> {
+trait HexToRgb {
+    fn hex_to_rgb(&self) -> (u8, u8, u8);
+}
+
+impl HexToRgb for str {
+    fn hex_to_rgb(&self) -> (u8, u8, u8) {
+        let hex = self.trim_start_matches('#');
+        let r = u8::from_str_radix(&hex[0..2], 16).unwrap();
+        let g = u8::from_str_radix(&hex[2..4], 16).unwrap();
+        let b = u8::from_str_radix(&hex[4..6], 16).unwrap();
+        (r, g, b)
+    }
+}
+
+fn parse_github_status(
+    response_data: heatmap_query::ResponseData,
+) -> Result<Vec<Vec<DayContribution>>, String> {
     match response_data.user {
         Some(user) => {
             let contribution_calendar = user.contributions_collection.contribution_calendar;
@@ -76,40 +93,40 @@ fn post_graphql_request(user_name: String) -> Result<heatmap_query::ResponseData
     Ok(response_data)
 }
 
-fn transpose(contributions: &[DayContribution]) -> Vec<&DayContribution> {
-    let mut transposed_contributions: Vec<&DayContribution> =
-        Vec::with_capacity(contributions.len());
-
-    let total_rows = contributions.len().div_ceil(7);
-    for row_idx in 0..total_rows {
-        for col_idx in 0..7 {
-            let idx = row_idx * 7 + col_idx;
-            // Is this logic necessary if using contributions.get?
-            if idx < contributions.len() {
-                if let Some(contribution) = contributions.get(idx) {
-                    // transposed_contributions
-                }
+fn transpose(contributions: &[Vec<DayContribution>]) -> Vec<Vec<DayContribution>> {
+    let mut rows: Vec<Vec<DayContribution>> = Vec::with_capacity(7);
+    for col  in 0..7 {
+        let mut new_row: Vec<DayContribution> = Vec::with_capacity(contributions.len());
+        for row in contributions {
+            if let Some(day_contribution) = row.get(col) {
+                new_row.push(DayContribution {
+                    date: day_contribution.date.clone(),
+                    color: day_contribution.color.clone(),
+                });
             }
         }
+        rows.push(new_row);
     }
 
-    transposed_contributions
+    rows
 }
 
-fn draw_heatmap(contributions: &[DayContribution]) {}
+fn draw_heatmap(contributions: &[Vec<DayContribution>]) {
+    for row in contributions {
+        for day_contribution in row {
+            let rgb = day_contribution.color.hex_to_rgb();
+            let color = DynColors::Rgb(rgb.0, rgb.1, rgb.2);
+            print!("{}", " ".color(color));
+        }
+        println!();
+    }
+}
 
 fn main() {
     let user_name = String::from("xtayex");
     let response_data = post_graphql_request(user_name).expect("Failed to post GraphQL request");
 
-    parse_github_status(response_data);
-    // match github_status {
-    //     Ok(response_data) => {
-    //         let transposed_contributions = transpose(&response_data);
-    //     }
-    //     Err(err_msg) => {
-    //         println!("{err_msg}");
-    //         std::process::exit(1);
-    //     }
-    // }
+    let github_status = parse_github_status(response_data).expect("Failed to parse GitHub status");
+    let transposed_contributions = transpose(&github_status);
+    draw_heatmap(&transposed_contributions);
 }
