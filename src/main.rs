@@ -1,6 +1,6 @@
 use ::reqwest::blocking::Client;
+use owo_colors::{DynColors, OwoColorize};
 use std::error::Error;
-use owo_colors::{OwoColorize, DynColors};
 // use anyhow::Result;
 use graphql_client::GraphQLQuery;
 use graphql_client::reqwest::post_graphql_blocking as post_graphql;
@@ -18,6 +18,16 @@ struct HeatmapQuery;
 struct DayContribution {
     date: String,
     color: String,
+}
+
+impl DayContribution {
+    fn get_month(&self) -> i32 {
+        let date = &self.date;
+        date.split("-")
+            .nth(1)
+            .and_then(|month| month.parse().ok())
+            .expect("Failed to parse month")
+    }
 }
 
 trait HexToRgb {
@@ -93,16 +103,13 @@ fn post_graphql_request(user_name: String) -> Result<heatmap_query::ResponseData
     Ok(response_data)
 }
 
-fn transpose(contributions: &[Vec<DayContribution>]) -> Vec<Vec<DayContribution>> {
-    let mut rows: Vec<Vec<DayContribution>> = Vec::with_capacity(7);
-    for col  in 0..7 {
-        let mut new_row: Vec<DayContribution> = Vec::with_capacity(contributions.len());
+fn transpose(contributions: &[Vec<DayContribution>]) -> Vec<Vec<&DayContribution>> {
+    let mut rows: Vec<Vec<&DayContribution>> = Vec::with_capacity(7);
+    for col in 0..7 {
+        let mut new_row: Vec<&DayContribution> = Vec::with_capacity(contributions.len());
         for row in contributions {
             if let Some(day_contribution) = row.get(col) {
-                new_row.push(DayContribution {
-                    date: day_contribution.date.clone(),
-                    color: day_contribution.color.clone(),
-                });
+                new_row.push(day_contribution);
             }
         }
         rows.push(new_row);
@@ -111,7 +118,7 @@ fn transpose(contributions: &[Vec<DayContribution>]) -> Vec<Vec<DayContribution>
     rows
 }
 
-fn draw_heatmap(contributions: &[Vec<DayContribution>]) {
+fn draw_heatmap(contributions: &[Vec<&DayContribution>]) {
     for row in contributions {
         for day_contribution in row {
             let rgb = day_contribution.color.hex_to_rgb();
@@ -122,11 +129,45 @@ fn draw_heatmap(contributions: &[Vec<DayContribution>]) {
     }
 }
 
+fn find_col_idx(contributions: &[Vec<&DayContribution>], date: &String) -> i32 {
+    let mut ret = -1;
+    for row in contributions {
+        for (col_idx, day_contribution) in row.iter().enumerate() {
+            if &day_contribution.date == date {
+                ret = col_idx as i32;
+            }
+        }
+    }
+
+    ret 
+}
+
+fn print_month(contributions: &[Vec<&DayContribution>]) {
+    let mut month_line = "".to_string();
+    let mut previous_month = 0;
+    let flattened_contribution: Vec<&DayContribution> = contributions.iter().flatten().cloned().collect();
+    for day_contribution in flattened_contribution {
+        let month = day_contribution.get_month();
+        if month != previous_month {
+            let col_idx = find_col_idx(contributions, &day_contribution.date) as usize;
+            let cur_len = month_line.len();
+            if cur_len > 0 {
+                month_line.push_str(" ".repeat(col_idx - 2 - cur_len).as_str());
+            }
+            month_line.push_str(format!("{month} ").as_str());
+        }
+        previous_month = month;
+    }
+
+    println!("{month_line}");
+}
+
 fn main() {
     let user_name = String::from("xtayex");
     let response_data = post_graphql_request(user_name).expect("Failed to post GraphQL request");
 
     let github_status = parse_github_status(response_data).expect("Failed to parse GitHub status");
     let transposed_contributions = transpose(&github_status);
+    print_month(&transposed_contributions);
     draw_heatmap(&transposed_contributions);
 }
