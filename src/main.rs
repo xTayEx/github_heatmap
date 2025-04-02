@@ -19,26 +19,27 @@ struct DayContribution {
     color: String,
 }
 
-fn parse_github_status(
-    response_data: heatmap_query::ResponseData,
-) -> Result<Vec<DayContribution>, String> {
+fn parse_github_status(response_data: heatmap_query::ResponseData) -> Result<Vec<Vec<DayContribution>>, String> {
     match response_data.user {
         Some(user) => {
-            let mut contributions: Vec<DayContribution> = Vec::new();
             let contribution_calendar = user.contributions_collection.contribution_calendar;
             // println!("contribution calendar: {:#?}", contribution_calendar);
-            let weeks_data = contribution_calendar.weeks;
-            for week in weeks_data {
-                let contribution_days = week.contribution_days;
-                for day in contribution_days {
-                    println!("date: {:?}, color: {:?}", day.date, day.color);
-                    contributions.push(DayContribution {
-                        date: day.date,
-                        color: day.color,
-                    });
-                }
-            }
-            Ok(contributions)
+            let week_status: Vec<Vec<DayContribution>> = contribution_calendar
+                .weeks
+                .iter()
+                .map(|week_data| {
+                    week_data
+                        .contribution_days
+                        .iter()
+                        .map(|day_data| DayContribution {
+                            date: day_data.date.clone(),
+                            color: day_data.color.clone(),
+                        })
+                        .collect()
+                })
+                .collect();
+
+            Ok(week_status)
         }
         None => {
             let err_msg = "User not found";
@@ -79,14 +80,14 @@ fn transpose(contributions: &[DayContribution]) -> Vec<&DayContribution> {
     let mut transposed_contributions: Vec<&DayContribution> =
         Vec::with_capacity(contributions.len());
 
-    // let total_rows = (contributions.len() + 7 - 1) / 7;
     let total_rows = contributions.len().div_ceil(7);
     for row_idx in 0..total_rows {
         for col_idx in 0..7 {
-            let idx = row_idx + col_idx * total_rows;
+            let idx = row_idx * 7 + col_idx;
+            // Is this logic necessary if using contributions.get?
             if idx < contributions.len() {
                 if let Some(contribution) = contributions.get(idx) {
-                    transposed_contributions.push(contribution);
+                    // transposed_contributions
                 }
             }
         }
@@ -95,22 +96,20 @@ fn transpose(contributions: &[DayContribution]) -> Vec<&DayContribution> {
     transposed_contributions
 }
 
-fn draw_heatmap(contributions: &[DayContribution]) {
-
-}
+fn draw_heatmap(contributions: &[DayContribution]) {}
 
 fn main() {
     let user_name = String::from("xtayex");
     let response_data = post_graphql_request(user_name).expect("Failed to post GraphQL request");
 
-    let github_status = parse_github_status(response_data);
-    match github_status {
-        Ok(response_data) => {
-            let transposed_contributions = transpose(&response_data);
-        }
-        Err(err_msg) => {
-            println!("{err_msg}");
-            std::process::exit(1);
-        }
-    }
+    parse_github_status(response_data);
+    // match github_status {
+    //     Ok(response_data) => {
+    //         let transposed_contributions = transpose(&response_data);
+    //     }
+    //     Err(err_msg) => {
+    //         println!("{err_msg}");
+    //         std::process::exit(1);
+    //     }
+    // }
 }
