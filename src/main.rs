@@ -1,9 +1,16 @@
 use ::reqwest::blocking::Client;
 use owo_colors::{DynColors, OwoColorize};
 use std::error::Error;
-// use anyhow::Result;
 use graphql_client::GraphQLQuery;
 use graphql_client::reqwest::post_graphql_blocking as post_graphql;
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct CliArgs {
+    #[arg(short, long)]
+    user_name: String,
+}
 
 type Date = String;
 
@@ -129,41 +136,38 @@ fn draw_heatmap(contributions: &[Vec<&DayContribution>]) {
     }
 }
 
-fn find_col_idx(contributions: &[Vec<&DayContribution>], date: &String) -> i32 {
-    let mut ret = -1;
-    for row in contributions {
-        for (col_idx, day_contribution) in row.iter().enumerate() {
-            if &day_contribution.date == date {
-                ret = col_idx as i32;
-            }
-        }
-    }
-
-    ret 
-}
-
 fn print_month(contributions: &[Vec<&DayContribution>]) {
     let mut month_line = "".to_string();
     let mut previous_month = 0;
-    let flattened_contribution: Vec<&DayContribution> = contributions.iter().flatten().cloned().collect();
-    for day_contribution in flattened_contribution {
-        let month = day_contribution.get_month();
-        if month != previous_month {
-            let col_idx = find_col_idx(contributions, &day_contribution.date) as usize;
-            let cur_len = month_line.len();
-            if cur_len > 0 {
-                month_line.push_str(" ".repeat(col_idx - 2 - cur_len).as_str());
+    for (col_idx, _) in contributions[0].iter().enumerate() {
+        let mut months_count = [0; 12];
+        for row in contributions {
+            if let Some(day_contribution) = row.get(col_idx) {
+                months_count[(day_contribution.get_month() - 1) as usize] += 1
             }
-            month_line.push_str(format!("{month} ").as_str());
         }
-        previous_month = month;
+
+        let most_appeared_month = months_count
+            .iter()
+            .enumerate()
+            .max_by(|(_, val0), (_, val1)| val0.cmp(val1))
+            .map(|(idx, _)| idx).expect("Failed to parse month");
+
+        if most_appeared_month != previous_month {
+            month_line.push_str(format!("{:02}", most_appeared_month + 1).as_str());
+        } else {
+            month_line.push_str("  ");
+        }
+
+        previous_month = most_appeared_month;
     }
 
     println!("{month_line}");
 }
 
 fn main() {
-    let user_name = String::from("xtayex");
+    let cli_args = CliArgs::parse();
+    let user_name = cli_args.user_name;
     let response_data = post_graphql_request(user_name).expect("Failed to post GraphQL request");
 
     let github_status = parse_github_status(response_data).expect("Failed to parse GitHub status");
