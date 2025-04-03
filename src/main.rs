@@ -1,15 +1,19 @@
 use ::reqwest::blocking::Client;
-use owo_colors::{DynColors, OwoColorize};
-use std::error::Error;
+use clap::Parser;
 use graphql_client::GraphQLQuery;
 use graphql_client::reqwest::post_graphql_blocking as post_graphql;
-use clap::Parser;
+use owo_colors::{DynColors, OwoColorize};
+use std::error::Error;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct CliArgs {
     #[arg(short, long)]
     user_name: String,
+
+    #[arg(short, long, default_value = " ")]
+    repre: String,
 }
 
 type Date = String;
@@ -57,7 +61,6 @@ fn parse_github_status(
     match response_data.user {
         Some(user) => {
             let contribution_calendar = user.contributions_collection.contribution_calendar;
-            // println!("contribution calendar: {:#?}", contribution_calendar);
             let week_status: Vec<Vec<DayContribution>> = contribution_calendar
                 .weeks
                 .iter()
@@ -125,12 +128,19 @@ fn transpose(contributions: &[Vec<DayContribution>]) -> Vec<Vec<&DayContribution
     rows
 }
 
-fn draw_heatmap(contributions: &[Vec<&DayContribution>]) {
+fn draw_heatmap(contributions: &[Vec<&DayContribution>], heatmap_repre: &str) {
+    assert!(
+        heatmap_repre.width() == 2,
+        "heatmap_repre should be width of 2, but width of {} is {}",
+        heatmap_repre,
+        heatmap_repre.width()
+    );
+
     for row in contributions {
         for day_contribution in row {
             let rgb = day_contribution.color.hex_to_rgb();
             let color = DynColors::Rgb(rgb.0, rgb.1, rgb.2);
-            print!("{}", " ".color(color));
+            print!("{}", heatmap_repre.color(color));
         }
         println!();
     }
@@ -151,7 +161,8 @@ fn print_month(contributions: &[Vec<&DayContribution>]) {
             .iter()
             .enumerate()
             .max_by(|(_, val0), (_, val1)| val0.cmp(val1))
-            .map(|(idx, _)| idx).expect("Failed to parse month");
+            .map(|(idx, _)| idx)
+            .expect("Failed to parse month");
 
         if most_appeared_month != previous_month {
             month_line.push_str(format!("{:02}", most_appeared_month + 1).as_str());
@@ -168,10 +179,11 @@ fn print_month(contributions: &[Vec<&DayContribution>]) {
 fn main() {
     let cli_args = CliArgs::parse();
     let user_name = cli_args.user_name;
+    let heatmap_repre = cli_args.repre;
     let response_data = post_graphql_request(user_name).expect("Failed to post GraphQL request");
 
     let github_status = parse_github_status(response_data).expect("Failed to parse GitHub status");
     let transposed_contributions = transpose(&github_status);
     print_month(&transposed_contributions);
-    draw_heatmap(&transposed_contributions);
+    draw_heatmap(&transposed_contributions, heatmap_repre.as_str());
 }
